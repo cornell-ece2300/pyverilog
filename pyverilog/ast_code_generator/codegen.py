@@ -175,6 +175,15 @@ class ASTCodeGenerator(ConvertVisitor):
         }
         rslt = template.render(template_dict)
         return rslt
+    
+    def visit_WildcardPortArg(self, node):
+        filename = getfilename(node)
+        template = self.get_template(filename)
+        template_dict = {
+            'name': '.*',
+        }
+        rslt = template.render(template_dict)
+        return rslt
 
     def visit_Width(self, node):
         filename = getfilename(node)
@@ -243,6 +252,15 @@ class ASTCodeGenerator(ConvertVisitor):
         return rslt
 
     def visit_StringConst(self, node):
+        filename = getfilename(node)
+        template = self.get_template(filename)
+        template_dict = {
+            'value': node.value,
+        }
+        rslt = template.render(template_dict)
+        return rslt
+    
+    def visit_UnsizedBitConst(self, node):
         filename = getfilename(node)
         template = self.get_template(filename)
         template_dict = {
@@ -324,6 +342,18 @@ class ASTCodeGenerator(ConvertVisitor):
         return rslt
 
     def visit_Reg(self, node):
+        filename = getfilename(node)
+        template = self.get_template(filename)
+        template_dict = {
+            'name': escape(node.name),
+            'width': '' if node.width is None else self.visit(node.width),
+            'signed': node.signed,
+            'dimensions': '' if node.dimensions is None else self.visit(node.dimensions),
+        }
+        rslt = template.render(template_dict)
+        return rslt
+    
+    def visit_Logic(self, node):
         filename = getfilename(node)
         template = self.get_template(filename)
         template_dict = {
@@ -654,6 +684,35 @@ class ASTCodeGenerator(ConvertVisitor):
         }
         rslt = template.render(template_dict)
         return rslt
+    
+    def visit_AlwaysComb(self, node):
+        filename = getfilename(node)
+        template = self.get_template(filename)
+        template_dict = {
+            'statement': self.visit(node.statement),
+        }
+        rslt = template.render(template_dict)
+        return rslt
+
+    def visit_AlwaysFF(self, node):
+        filename = getfilename(node)
+        template = self.get_template(filename)
+        template_dict = {
+            'sens_list': self.visit(node.sens_list),
+            'statement': self.visit(node.statement),
+        }
+        rslt = template.render(template_dict)
+        return rslt
+    
+    def visit_AlwaysLatch(self, node):
+        filename = getfilename(node)
+        template = self.get_template(filename)
+        template_dict = {
+            'sens_list': self.visit(node.sens_list),
+            'statement': self.visit(node.statement),
+        }
+        rslt = template.render(template_dict)
+        return rslt
 
     def visit_SensList(self, node):
         filename = getfilename(node)
@@ -769,6 +828,17 @@ class ASTCodeGenerator(ConvertVisitor):
         }
         rslt = template.render(template_dict)
         return rslt
+    
+    def visit_CasezStatement(self, node):
+        filename = getfilename(node)
+        template = self.get_template(filename)
+        template_dict = {
+            'comp': del_paren(self.visit(node.comp)),
+            'caselist': [self.indent(self.visit(case)) for case in node.caselist],
+        }
+        rslt = template.render(template_dict)
+        return rslt
+
 
     def visit_Case(self, node):
         filename = getfilename(node)

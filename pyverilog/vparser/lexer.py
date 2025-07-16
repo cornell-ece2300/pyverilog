@@ -86,8 +86,10 @@ class VerilogLexer(object):
         'INTNUMBER_HEX', 'SIGNED_INTNUMBER_HEX',
         'INTNUMBER_OCT', 'SIGNED_INTNUMBER_OCT',
         'INTNUMBER_BIN', 'SIGNED_INTNUMBER_BIN',
+        'UNSIZED_BIT_LITERAL',
         'LPAREN', 'RPAREN', 'LBRACKET', 'RBRACKET', 'LBRACE', 'RBRACE',
         'DELAY', 'DOLLER',
+        'DOTSTAR',
     )
 
     skipped = (
@@ -170,6 +172,8 @@ class VerilogLexer(object):
     t_COLON = r':'
     t_DOT = r'\.'
 
+    t_DOTSTAR = r'\.\*'
+
     t_LPAREN = r'\('
     t_RPAREN = r'\)'
     t_LBRACKET = r'\['
@@ -203,6 +207,13 @@ class VerilogLexer(object):
     string_literal = '"' + string_char + '*"'
 
     identifier = r"""(([a-zA-Z_])([a-zA-Z_0-9$])*)|((\\\S)(\S)*)"""
+
+    #ADDED FOR unsized bit literal
+    unsized_bit_literal = r"\'[01xXzZ]"
+    
+    @TOKEN(unsized_bit_literal)
+    def t_UNSIZED_BIT_LITERAL(self, t):
+        return t
 
     @TOKEN(string_literal)
     def t_STRING_LITERAL(self, t):

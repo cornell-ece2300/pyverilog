@@ -49,7 +49,7 @@ class VerilogParser(object):
         # -> Strong
     )
 
-    def __init__(self, outputdir=".", debug=True):
+    def __init__(self, outputdir=".", debug=False):
         self.lexer = VerilogLexer(error_func=self._lexer_error_func)
         self.lexer.build()
 
@@ -59,7 +59,7 @@ class VerilogParser(object):
             module=self,
             method="LALR",
             outputdir=outputdir,
-            debug=debug
+            debug=debug,
         )
 
     def _lexer_error_func(self, msg, line, column):
@@ -338,12 +338,26 @@ class VerilogParser(object):
 
     def p_ioports(self, p):
         'ioports : ioports COMMA ioport'
+        # p[1] is the tuple of previously parsed ioports
+        # p[3] is the current ioport being processed.
+        # If p[3] is a string, it's an identifier like 'c' in "..., b, c", type needs inference.
+        # If p[3] is an Ioport object, it was fully specified (e.g., "input logic c").
+
+        #POSSIBLE BUGS WITH HOW WIRES AND TRIS are HANDLED
         if isinstance(p[3], str):
             t = None
             for r in reversed(p[1]):
-                if isinstance(r.first, Input):
+                #added none condition for logic
+                if isinstance(r.first, Input) and r.second is None:
                     t = Ioport(Input(name=p[3], width=r.first.width, lineno=p.lineno(3)),
                                lineno=p.lineno(3))
+                    break
+                #Added for Logic
+                if isinstance(r.first, Input) and isinstance(r.second, Logic):
+                    t = Ioport(Input(name=p[3], width=r.first.width, lineno=p.lineno(3)),
+                                 Logic(name=p[3], width=r.first.width,
+                                        lineno=p.lineno(3)),
+                                 lineno=p.lineno(3))
                     break
                 if isinstance(r.first, Output) and r.second is None:
                     t = Ioport(Output(name=p[3], width=r.first.width, lineno=p.lineno(3)),
@@ -355,8 +369,22 @@ class VerilogParser(object):
                                    lineno=p.lineno(3)),
                                lineno=p.lineno(3))
                     break
-                if isinstance(r.first, Inout):
+                #Added for logic
+                if isinstance(r.first, Output) and isinstance(r.second, Logic):
+                    t = Ioport(Output(name=p[3], width=r.first.width, lineno=p.lineno(3)),
+                               Logic(name=p[3], width=r.first.width,
+                                     lineno=p.lineno(3)),
+                               lineno=p.lineno(3))
+                    break
+                #Added condition for logic
+                if isinstance(r.first, Inout) and r.second is None:
                     t = Ioport(Inout(name=p[3], width=r.first.width, lineno=p.lineno(3)),
+                               lineno=p.lineno(3))
+                    break
+                if isinstance(r.first, Inout) and isinstance(r.second, Logic):
+                    t = Ioport(Inout(name=p[3], width=r.first.width, lineno=p.lineno(3)),
+                               Logic(name=p[3], width=r.first.width,
+                                     lineno=p.lineno(3)),
                                lineno=p.lineno(3))
                     break
             p[0] = p[1] + (t,)
@@ -374,6 +402,7 @@ class VerilogParser(object):
         first = None
         second = None
         signed = False
+
         if 'signed' in sigtypes:
             signed = True
         if 'input' in sigtypes:
@@ -391,20 +420,27 @@ class VerilogParser(object):
         if 'reg' in sigtypes:
             second = Reg(name=name, width=width, signed=signed,
                          dimensions=dimensions, lineno=lineno)
+        #ADDED FOR LOGIC
+        if 'logic' in sigtypes:
+            second = Logic(name=name, width=width, signed=signed,
+                           dimensions=dimensions, lineno=lineno)
         if 'tri' in sigtypes:
             second = Tri(name=name, width=width, signed=signed,
                          dimensions=dimensions, lineno=lineno)
         return Ioport(first, second, lineno=lineno)
 
     def typecheck_ioport(self, sigtypes):
+        #Check for valid input output directions
         if 'input' not in sigtypes and 'output' not in sigtypes and 'inout' not in sigtypes:
             raise ParseError("Syntax Error")
+        #Check for only singl direction
         if 'input' in sigtypes and 'output' in sigtypes:
             raise ParseError("Syntax Error")
         if 'inout' in sigtypes and 'output' in sigtypes:
             raise ParseError("Syntax Error")
         if 'inout' in sigtypes and 'input' in sigtypes:
             raise ParseError("Syntax Error")
+        # Invalid combinations
         if 'input' in sigtypes and 'reg' in sigtypes:
             raise ParseError("Syntax Error")
         if 'inout' in sigtypes and 'reg' in sigtypes:
@@ -413,6 +449,7 @@ class VerilogParser(object):
             raise ParseError("Syntax Error")
         if 'output' in sigtypes and 'tri' in sigtypes:
             raise ParseError("Syntax Error")
+        #Logic can support all these types so no additional checks are needed
 
     def p_ioport(self, p):
         'ioport : sigtypes portname'
@@ -454,20 +491,20 @@ class VerilogParser(object):
         p[0] = Width(p[2], p[4], lineno=p.lineno(1))
         p.set_lineno(0, p.lineno(1))
 
-    def p_length(self, p):
-        'length : LBRACKET expression COLON expression RBRACKET'
-        p[0] = Length(p[2], p[4], lineno=p.lineno(1))
-        p.set_lineno(0, p.lineno(1))
+    # def p_length(self, p):
+    #     'length : LBRACKET expression COLON expression RBRACKET'
+    #     p[0] = Length(p[2], p[4], lineno=p.lineno(1))
+    #     p.set_lineno(0, p.lineno(1))
 
     def p_dimensions(self, p):
-        'dimensions : dimensions length'
-        dims = p[1].lengths + [p[2]]
+        'dimensions : dimensions unpacked_array_dimension_specifier'
+        dims = p[1].lengths + (p[2],)
         p[0] = Dimensions(dims, lineno=p.lineno(1))
         p.set_lineno(0, p.lineno(1))
 
     def p_dimensions_one(self, p):
-        'dimensions : length'
-        dims = [p[1]]
+        'dimensions : unpacked_array_dimension_specifier'
+        dims = (p[1],)
         p[0] = Dimensions(dims, lineno=p.lineno(1))
         p.set_lineno(0, p.lineno(1))
 
@@ -536,6 +573,9 @@ class VerilogParser(object):
         if 'reg' in sigtypes:
             decls.append(Reg(name=name, width=width,
                              signed=signed, lineno=lineno, dimensions=dimensions))
+        if 'logic' in sigtypes:
+            decls.append(Logic(name=name, width=width,
+                               signed=signed, lineno=lineno, dimensions=dimensions))
         if 'tri' in sigtypes:
             decls.append(Tri(name=name, width=width,
                              signed=signed, lineno=lineno, dimensions=dimensions))
@@ -551,8 +591,10 @@ class VerilogParser(object):
         if ('supply0' in sigtypes or 'supply1' in sigtypes) and \
            dimensions is not None:
             raise ParseError("SyntaxError")
+        #Signed datatypes need additional dataclass, reg, wire etc.
         if len(sigtypes) == 1 and 'signed' in sigtypes:
             raise ParseError("Syntax Error")
+        #Same as last time, again no need for additional logic checks
         if 'input' in sigtypes and 'output' in sigtypes:
             raise ParseError("Syntax Error")
         if 'inout' in sigtypes and 'output' in sigtypes:
@@ -567,7 +609,7 @@ class VerilogParser(object):
             raise ParseError("Syntax Error")
         if 'output' in sigtypes and 'tri' in sigtypes:
             raise ParseError("Syntax Error")
-
+        
     def p_decl(self, p):
         'decl : sigtypes declnamelist SEMICOLON'
         decllist = []
@@ -605,6 +647,30 @@ class VerilogParser(object):
         'declname : ID dimensions'
         p[0] = (p[1], p[2])
         p.set_lineno(0, p.lineno(1))
+    
+    #ADDED FOR Single NUMBER FOR HIGHER DIMENSION
+    def p_unpacked_array_dimension_specifier(self, p):
+        """unpacked_array_dimension_specifier : LBRACKET expression COLON expression RBRACKET
+                                            | LBRACKET expression RBRACKET
+        """
+        if len(p) == 6:  # Matched LBRACKET expression COLON expression RBRACKET
+            # This is the traditional Verilog range [msb:lsb]
+            p[0] = Length(msb=p[2], lsb=p[4], lineno=p.lineno(1))
+        elif len(p) == 4:  # Matched LBRACKET expression RBRACKET
+            # This is the SystemVerilog size [N], interpret as [N-1:0]
+            size_expr = p[2]
+            one_const = IntConst('1', lineno=p.lineno(1)) # Constant 1
+            zero_const = IntConst('0', lineno=p.lineno(1)) # Constant 0
+            
+            # msb = size_expr - 1
+            msb_val = zero_const
+            # lsb = 0
+            lsb_val = Minus(size_expr, one_const, lineno=p.lineno(1))
+            
+            p[0] = Length(msb=msb_val, lsb=lsb_val, lineno=p.lineno(1))
+        
+        p.set_lineno(0, p.lineno(1))
+
 
     # Decl and Assign
     def create_declassign(self, sigtypes, name, assign, width=None, lineno=0):
@@ -628,20 +694,26 @@ class VerilogParser(object):
         if 'reg' in sigtypes:
             decls.append(Reg(name=name, width=width,
                              signed=signed, lineno=lineno))
+        if 'logic' in sigtypes:
+            decls.append(Logic(name=name, width=width,
+                               signed=signed, lineno=lineno))
         decls.append(assign)
         return decls
 
     def typecheck_declassign(self, sigtypes):
         if len(sigtypes) == 1 and 'signed' in sigtypes:
             raise ParseError("Syntax Error")
-        if 'reg' not in sigtypes and 'wire' not in sigtypes:
+        #Edited for LOGIC
+        if 'reg' not in sigtypes and 'wire' not in sigtypes and  'logic' not in sigtypes:
             raise ParseError("Syntax Error")
+        #Cant have two assignments
         if 'input' in sigtypes and 'output' in sigtypes:
             raise ParseError("Syntax Error")
         if 'inout' in sigtypes and 'output' in sigtypes:
             raise ParseError("Syntax Error")
         if 'inout' in sigtypes and 'input' in sigtypes:
             raise ParseError("Syntax Error")
+        #Regs cant be inputs or inouts
         if 'input' in sigtypes and 'reg' in sigtypes:
             raise ParseError("Syntax Error")
         if 'inout' in sigtypes and 'reg' in sigtypes:
@@ -1174,7 +1246,12 @@ class VerilogParser(object):
         'expression : functioncall'
         p[0] = p[1]
         p.set_lineno(0, p.lineno(1))
-
+    
+    # def p_expression_taskcall(self, p):
+    #     'expression : taskcall'
+    #     p[0] = p[1]
+    #     p.set_lineno(0, p.lineno(1))
+    
     def p_expression_systemcall(self, p):
         'expression : systemcall'
         p[0] = p[1]
@@ -1268,6 +1345,11 @@ class VerilogParser(object):
     def p_const_expression_stringliteral(self, p):
         'const_expression : stringliteral'
         p[0] = StringConst(p[1], lineno=p.lineno(1))
+        p.set_lineno(0, p.lineno(1))
+    
+    def p_const_expression_unsizedbitliteral(self, p):
+        'const_expression : UNSIZED_BIT_LITERAL'
+        p[0] = UnsizedBitConst(p[1], lineno=p.lineno(1))
         p.set_lineno(0, p.lineno(1))
 
     def p_floatnumber(self, p):
@@ -1557,9 +1639,11 @@ class VerilogParser(object):
         """
         if isinstance(p[1], Decl):
             for r in p[1].list:
+                #ADDED LOGIC TO LIST OF ALLOWED TYPES
                 if (not isinstance(r, Reg) and not isinstance(r, Wire) and
                     not isinstance(r, Integer) and not isinstance(r, Real) and
-                        not isinstance(r, Parameter) and not isinstance(r, Localparam)):
+                        not isinstance(r, Parameter) and not isinstance(r, Localparam) and
+                        not isinstance(r, Logic)):
                     raise ParseError("Syntax Error")
         p[0] = p[1]
         p.set_lineno(0, p.lineno(1))
@@ -1937,6 +2021,11 @@ class VerilogParser(object):
         'instance_port_arg : DOT ID LPAREN identifier RPAREN'
         p[0] = PortArg(p[2], p[4], lineno=p.lineno(1))
         p.set_lineno(0, p.lineno(1))
+    
+    def p_instance_port_arg_wildcard(self, p):
+        'instance_port_arg : DOTSTAR'
+        p[0] = WildcardPortArg(lineno=p.lineno(1))
+        p.set_lineno(0, p.lineno(1))
 
     def p_instance_port_arg_exp(self, p):
         'instance_port_arg : DOT ID LPAREN expression RPAREN'
@@ -2133,9 +2222,9 @@ class VerilogParser(object):
         """
         if isinstance(p[1], Decl):
             for r in p[1].list:
-                if (not isinstance(r, Input) and not isinstance(r, Reg) and
-                        not isinstance(r, Integer)):
-                    raise ParseError("Syntax Error")
+                # Check for valid declaration types within a function.
+                if not isinstance(r, (Input, Output, Inout, Reg, Integer, Logic, Parameter, Localparam, Wire)):
+                    raise ParseError("Syntax Error at line %d: Invalid declaration type '%s' in function." % (r.lineno, type(r).__name__))
         p[0] = p[1]
         p.set_lineno(0, p.lineno(1))
 
@@ -2179,9 +2268,33 @@ class VerilogParser(object):
         p.set_lineno(0, p.lineno(1))
 
     def p_task_statement(self, p):
-        'task_statement : taskvardecls task_calc'
-        p[0] = p[1] + (p[2],)
+        'task_statement : taskvardecls task_procedural_statements'
+        declarations = p[1] if p[1] is not None else ()
+        procedural_stmts = p[2] if p[2] is not None else ()
+        
+        # Ensure both are tuples before concatenation
+        if not isinstance(declarations, tuple): declarations = (declarations,) if declarations is not None else ()
+        if not isinstance(procedural_stmts, tuple): procedural_stmts = (procedural_stmts,) if procedural_stmts is not None else ()
+
+        p[0] = declarations + procedural_stmts
         p.set_lineno(0, p.lineno(1))
+
+    def p_task_procedural_statements(self, p):
+        """task_procedural_statements : task_procedural_statements task_procedural_statement
+                                    | empty
+        """
+        if len(p) == 3:
+            p[0] = p[1] + (p[2],)
+            p.set_lineno(0, p.lineno(1))
+        else: # empty
+            p[0] = ()
+            # p.set_lineno(0, p.lineno(1)) # lineno of empty is tricky, often not set or inherited
+
+    def p_task_procedural_statement(self, p):
+        """task_procedural_statement : basic_statement
+        """
+        p[0] = p[1]
+        p.set_lineno(0, p.lineno(1)) 
 
     def p_taskvardecls(self, p):
         'taskvardecls : taskvardecls taskvardecl'
@@ -2199,27 +2312,23 @@ class VerilogParser(object):
 
     def p_taskvardecl(self, p):
         """taskvardecl : decl
-        | integerdecl
+                       | integerdecl
         """
         if isinstance(p[1], Decl):
             for r in p[1].list:
-                if (not isinstance(r, Input) and not isinstance(r, Reg) and
-                        not isinstance(r, Integer)):
-                    raise ParseError("Syntax Error")
-        p[0] = p[1]
-        p.set_lineno(0, p.lineno(1))
+                is_valid_task_decl_item = isinstance(r, (
+                    Ioport, Input, Output, 
+                    Reg, Logic, Wire, Tri, # Common local declarations
+                    Integer, # From integerdecl path
+                    Supply # If supply declarations are allowed in tasks by p_decl
+                ))
 
-    def p_task_calc(self, p):
-        """task_calc : blocking_substitution
-        | if_statement
-        | for_statement
-        | while_statement
-        | case_statement
-        | casex_statement
-        | casez_statement
-        | block
-        | namedblock
-        """
+                if not is_valid_task_decl_item:
+                    # This error means create_decl produced something unexpected for a task context,
+                    # or the list of allowed types above is incomplete.
+                    raise ParseError(
+                        "Syntax Error at line %d: Invalid item type '%s' found in task's variable/port declaration list. Expected Ioport, Reg, Logic, Integer, etc." % 
+                        (r.lineno, type(r).__name__))
         p[0] = p[1]
         p.set_lineno(0, p.lineno(1))
 
@@ -2256,6 +2365,39 @@ class VerilogParser(object):
         p.set_lineno(0, p.lineno(1))
 
     # --------------------------------------------------------------------------
+
+    # def p_single_statement_taskcall(self, p):
+    #     'single_statement : functioncall SEMICOLON %prec UMINUS'
+    #     func_call_node = p[1]
+    #     task_call_node = TaskCall(func_call_node.name, func_call_node.args, lineno=func_call_node.lineno)
+
+    #     # We wrap it in the standard SingleStatement node, just like systemcall and disable.
+    #     p[0] = SingleStatement(task_call_node, lineno=p.lineno(1))
+    #     p.set_lineno(0, p.lineno(1))
+
+    # def p_taskcall(self, p):
+    #     'taskcall : identifier LPAREN taskcall_args RPAREN'
+    #     p[0] = TaskCall(p[1], p[3], lineno=p.lineno(1))
+    #     p.set_lineno(0, p.lineno(1))
+
+    # def p_taskcall_args(self, p):
+    #     """taskcall_args : taskcall_args COMMA expression"""
+    #     p[0] = p[1] + (p[3],)
+    #     p.set_lineno(0, p.lineno(1))
+
+    # def p_taskcall_args_one(self, p):
+    #     'taskcall_args : expression'
+    #     p[0] = (p[1],)
+    #     p.set_lineno(0, p.lineno(1))
+
+    # def p_taskcall_args_empty(self, p):
+    #     'taskcall_args : empty'
+    #     p[0] = ()
+    
+    
+
+    # --------------------------------------------------------------------------
+
     def p_single_statement_delays(self, p):
         'single_statement : DELAY expression SEMICOLON'
         p[0] = SingleStatement(DelayStatement(
@@ -2274,22 +2416,6 @@ class VerilogParser(object):
         p[0] = SingleStatement(p[1], lineno=p.lineno(1))
         p.set_lineno(0, p.lineno(1))
         p[0].end_lineno = p.lineno(2)
-
-    # fix me: to support task-call-statement
-    # def p_single_statement_taskcall(self, p):
-    #    'single_statement : functioncall SEMICOLON'
-    #    p[0] = SingleStatement(p[1], lineno=p.lineno(1))
-    #    p.set_lineno(0, p.lineno(1))
-
-    # def p_single_statement_taskcall_empty(self, p):
-    #    'single_statement : taskcall SEMICOLON'
-    #    p[0] = SingleStatement(p[1], lineno=p.lineno(1))
-    #    p.set_lineno(0, p.lineno(1))
-
-    # def p_taskcall_empty(self, p):
-    #    'taskcall : identifier'
-    #    p[0] = FunctionCall(p[1], (), lineno=p.lineno(1))
-    #    p.set_lineno(0, p.lineno(1))
 
     # --------------------------------------------------------------------------
     def p_empty(self, p):
@@ -2329,7 +2455,7 @@ class VerilogCodeParser(object):
                  preprocess_include=None,
                  preprocess_define=None,
                  outputdir=".",
-                 debug=True
+                 debug=False
                  ):
         self.preprocess_output = preprocess_output
         self.directives = ()
@@ -2359,7 +2485,7 @@ def parse(
     preprocess_include=None,
     preprocess_define=None,
     outputdir=".",
-    debug=True
+    debug=False
 ):
     codeparser = VerilogCodeParser(
         filelist,

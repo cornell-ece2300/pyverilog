@@ -175,6 +175,14 @@ class Port(Node):
             nodelist.append(self.width)
         return tuple(nodelist)
 
+class WildcardPortArg(Node):
+    attr_names = ()
+
+    def __init__(self, lineno=0):
+        self.lineno =lineno
+    
+    def children(self):
+        return tuple()
 
 class Width(Node):
     attr_names = ()
@@ -271,6 +279,9 @@ class FloatConst(Constant):
 class StringConst(Constant):
     pass
 
+#ADDED
+class UnsizedBitConst(Constant):
+    pass
 
 class Variable(Value):
     attr_names = ('name', 'signed')
@@ -317,6 +328,8 @@ class Wire(Variable):
 class Reg(Variable):
     pass
 
+class Logic(Variable):
+    pass
 
 class Integer(Variable):
     pass
@@ -1142,6 +1155,9 @@ class TaskCall(Node):
         if self.args:
             nodelist.extend(self.args)
         return tuple(nodelist)
+
+    def __repr__(self):
+        return self.name.__repr__()
 
 
 class GenerateStatement(Node):
