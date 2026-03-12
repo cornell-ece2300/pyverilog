@@ -1626,7 +1626,7 @@ class VerilogParser(object):
         'if_statement : IF LPAREN cond RPAREN true_statement'
         p[0] = IfStatement(p[3], p[5], None, lineno=p.lineno(1))
         p.set_lineno(0, p.lineno(1))
-        p[0].end_lineno = p[5].end_lineno
+        p[0].end_lineno = getattr(p[5], "end_lineno", p.lineno(1))
 
     def p_if_statement_delay(self, p):
         'if_statement : delays IF LPAREN cond RPAREN true_statement ELSE else_statement'
